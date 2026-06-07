@@ -1,7 +1,11 @@
 import { ChatOpenAI } from '@langchain/openai';
 
-export function createChatModel(model = 'google/gemini-2.0-flash-001') {
-  return new ChatOpenAI({
+const originalOpenAIKey = process.env.OPENAI_API_KEY;
+
+export function createChatModel(model = 'anthropic/claude-3.5-haiku') {
+  process.env.OPENAI_API_KEY = process.env.OPENROUTER_API_KEY;
+
+  const chatModel = new ChatOpenAI({
     model,
     openAIApiKey: process.env.OPENROUTER_API_KEY,
     configuration: {
@@ -10,10 +14,16 @@ export function createChatModel(model = 'google/gemini-2.0-flash-001') {
     streaming: true,
     temperature: 0.7,
   });
+
+  if (originalOpenAIKey !== undefined) {
+    process.env.OPENAI_API_KEY = originalOpenAIKey;
+  }
+
+  return chatModel;
 }
 
 export function createReasoningModel() {
-  return createChatModel('google/gemini-2.0-flash-001');
+  return createChatModel('anthropic/claude-3.5-haiku');
 }
 
 export function createStrongModel() {
