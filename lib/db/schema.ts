@@ -26,11 +26,23 @@ export function initDB(db: Database.Database) {
       content TEXT NOT NULL,
       reasoning TEXT,
       citations TEXT,
+      embedding_id TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS message_embeddings (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      embedding BLOB NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_chats_workspace ON chats(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id);
+    CREATE INDEX IF NOT EXISTS idx_embeddings_workspace ON message_embeddings(workspace_id);
   `);
 }
