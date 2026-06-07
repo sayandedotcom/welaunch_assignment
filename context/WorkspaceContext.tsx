@@ -43,6 +43,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const handleSetCurrentWorkspace = (w: WorkspaceType) => {
+    setCurrentWorkspace(w);
+  };
+
   const addWorkspace = async (name: string) => {
     const res = await fetch('/api/workspaces', {
       method: 'POST',
@@ -73,7 +77,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   return (
     <WorkspaceContext.Provider value={{
-      workspaces, currentWorkspace, setCurrentWorkspace,
+      workspaces, currentWorkspace, setCurrentWorkspace: handleSetCurrentWorkspace,
       addWorkspace, updateWorkspace, deleteWorkspace, refreshWorkspaces,
     }}>
       {children}

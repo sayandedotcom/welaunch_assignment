@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 
 interface Message {
   id: string;
@@ -30,8 +30,24 @@ const ChatContext = createContext<ChatContextType | null>(null);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [chats, setChats] = useState<Chat[]>([]);
-  const [currentChat, setCurrentChat] = useState<Chat | null>(null);
+  const [currentChat, setCurrentChatState] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+
+  const loadChatMessages = useCallback(async (chatId: string) => {
+    const res = await fetch(`/api/chats/${chatId}`);
+    const data = await res.json();
+    setMessages(data.map((m: { id: string; role: string; content: string; reasoning?: string }) => ({
+      id: m.id,
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+      reasoning: m.reasoning,
+    })));
+  }, []);
+
+  const setCurrentChat = useCallback((c: Chat) => {
+    setCurrentChatState(c);
+    loadChatMessages(c.id);
+  }, [loadChatMessages]);
 
   const refreshChats = async (workspaceId: string) => {
     const res = await fetch(`/api/chats?workspaceId=${workspaceId}`);
@@ -46,7 +62,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     });
     const chat = await res.json();
     setChats([chat, ...chats]);
-    setCurrentChat(chat);
+    setCurrentChatState(chat);
     setMessages([]);
   };
 
@@ -54,7 +70,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     await fetch(`/api/chats/${id}`, { method: 'DELETE' });
     setChats(chats.filter(c => c.id !== id));
     if (currentChat?.id === id) {
-      setCurrentChat(null);
+      setCurrentChatState(null);
       setMessages([]);
     }
   };
@@ -62,8 +78,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const sendMessage = async (content: string) => {
     if (!currentChat) return;
 
-    const userMsg: Message = { id: 'temp-user', role: 'user', content };
-    setMessages(prev => [...prev, userMsg]);
+    const assistantMsgId = `temp-assistant-${Date.now()}`;
+    const placeholderMsg: Message = { id: assistantMsgId, role: 'assistant', content: '' };
+    setMessages(prev => [...prev, placeholderMsg]);
 
     const res = await fetch('/api/chat', {
       method: 'POST',
@@ -88,17 +105,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const lines = text.split('\n').filter(l => l.startsWith('data: '));
 
       for (const line of lines) {
-        const data = JSON.parse(line.replace('data: ', ''));
-        if (data.type === 'reasoning') {
-          reasoningBuffer = data.content;
-          setMessages(prev => prev.map(m =>
-            m.id === 'temp-user' ? { ...m, reasoning: reasoningBuffer } : m
-          ));
-        } else if (data.type === 'answer') {
-          answerBuffer = data.content;
-          setMessages(prev => prev.map(m =>
-            m.id === 'temp-user' ? { ...m, content: answerBuffer } : m
-          ));
+        try {
+          const data = JSON.parse(line.replace('data: ', ''));
+          if (data.type === 'reasoning') {
+            reasoningBuffer = data.content;
+            setMessages(prev => prev.map(m =>
+              m.id === assistantMsgId ? { ...m, reasoning: reasoningBuffer } : m
+            ));
+          } else if (data.type === 'answer') {
+            answerBuffer = data.content;
+            setMessages(prev => prev.map(m =>
+              m.id === assistantMsgId ? { ...m, content: answerBuffer } : m
+            ));
+          } else if (data.type === 'done') {
+            setMessages(prev => prev.map(m =>
+              m.id === assistantMsgId ? { ...m, id: data.messageId } : m
+            ));
+          }
+        } catch (e) {
+          // Skip malformed JSON
         }
       }
     }

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDB } from '@/lib/db';
 import { streamingReasoningChain } from '@/lib/langchain/chains/reasoning';
-import { retrieveCrossChatContext } from '@/lib/langchain/chains/cross-chat';
+import { retrieveCrossChatContext, storeMessageEmbedding } from '@/lib/langchain/chains/cross-chat';
 import { v4 as uuid } from 'uuid';
 
 interface MessageRow {
@@ -26,10 +26,13 @@ export async function POST(req: NextRequest) {
     VALUES (?, ?, 'user', ?, ?)
   `).run(userMsgId, chatId, message, Date.now());
 
-  const stream = streamingReasoningChain(
-    message,
-    crossChatContext ? chatHistory + '\n\nRelated: ' + JSON.stringify(crossChatContext) : chatHistory
-  );
+  storeMessageEmbedding(db, workspaceId, chatId, userMsgId, message).catch(console.error);
+
+  const contextStr = crossChatContext
+    ? chatHistory + '\n\nRelated: ' + JSON.stringify(crossChatContext)
+    : chatHistory;
+
+  const stream = streamingReasoningChain(message, contextStr);
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
@@ -52,6 +55,8 @@ export async function POST(req: NextRequest) {
         INSERT INTO messages (id, chat_id, role, content, reasoning, created_at)
         VALUES (?, ?, 'assistant', ?, ?, ?)
       `).run(assistantMsgId, chatId, finalAnswerBuffer, reasoningBuffer, Date.now());
+
+      storeMessageEmbedding(db, workspaceId, chatId, assistantMsgId, finalAnswerBuffer).catch(console.error);
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', messageId: assistantMsgId })}\n\n`));
       controller.close();
