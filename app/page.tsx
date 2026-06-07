@@ -7,7 +7,7 @@ export default function Home() {
   return (
     <div className="flex h-full">
       <Sidebar />
-      <main className="flex-1 flex flex-col bg-white dark:bg-zinc-950">
+      <main className="flex-1 flex flex-col bg-background text-foreground">
         <ChatBlock />
       </main>
     </div>
