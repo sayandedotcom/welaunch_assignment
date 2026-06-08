@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { sql } from '@/lib/db/postgres';
 import { createChatModel } from '../chat';
 import { createEmbeddings } from '../../vector-store';
 
@@ -25,24 +25,19 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-function getKeywordFallback(
-  db: Database.Database,
+async function getKeywordFallback(
   workspaceId: string,
   currentMessage: string,
   excludeChatId?: string
-): CrossChatResult[] | null {
-  const rows = db.prepare(`
+): Promise<CrossChatResult[] | null> {
+  const { rows } = await sql`
     SELECT messages.chat_id, messages.content, chats.title AS chat_title
     FROM messages
     JOIN chats ON chats.id = messages.chat_id
-    WHERE chats.workspace_id = ? AND messages.chat_id != ?
+    WHERE chats.workspace_id = ${workspaceId} AND messages.chat_id != ${excludeChatId || ''}
     ORDER BY messages.created_at DESC
     LIMIT 10
-  `).all(workspaceId, excludeChatId || '') as Array<{
-    chat_id: string;
-    content: string;
-    chat_title: string;
-  }>;
+  `;
 
   if (rows.length === 0) return null;
 
@@ -72,41 +67,38 @@ function getKeywordFallback(
 export async function retrieveCrossChatContext(
   workspaceId: string,
   currentMessage: string,
-  db: Database.Database,
   excludeChatId?: string
 ): Promise<CrossChatResult[] | null> {
   try {
     const embeddings = createEmbeddings();
     const queryEmbedding = await embeddings.embedQuery(currentMessage);
 
-    const rows = db.prepare(`
+    const { rows } = await sql`
       SELECT id, chat_id, content, embedding
       FROM message_embeddings
-      WHERE workspace_id = ? AND chat_id != ?
-    `).all(workspaceId, excludeChatId || '') as Array<{
-      id: string;
-      chat_id: string;
-      content: string;
-      embedding: Buffer;
-    }>;
+      WHERE workspace_id = ${workspaceId} AND chat_id != ${excludeChatId || ''}
+    `;
 
     if (rows.length === 0) return null;
 
     const results: CrossChatResult[] = [];
     for (const row of rows) {
-      if (row.embedding.length === 0) continue;
+      if (!row.embedding || row.embedding.length === 0) continue;
 
-      const float32Array = new Float32Array(row.embedding.length / 4);
+      const embeddingBuffer = Buffer.from(row.embedding);
+      const float32Array = new Float32Array(embeddingBuffer.length / 4);
       for (let i = 0; i < float32Array.length; i++) {
-        float32Array[i] = row.embedding.readFloatLE(i * 4);
+        float32Array[i] = embeddingBuffer.readFloatLE(i * 4);
       }
       const storedEmbedding = Array.from(float32Array);
       const similarity = cosineSimilarity(queryEmbedding, storedEmbedding);
       if (similarity > 0.7) {
-        const chatRow = db.prepare('SELECT title FROM chats WHERE id = ?').get(row.chat_id) as { title: string } | undefined;
+        const { rows: chatRows } = await sql`
+          SELECT title FROM chats WHERE id = ${row.chat_id}
+        `;
         results.push({
           chatId: row.chat_id,
-          chatTitle: chatRow?.title || 'Untitled Chat',
+          chatTitle: chatRows[0]?.title || 'Untitled Chat',
           snippet: row.content.slice(0, 200),
           similarity,
         });
@@ -117,14 +109,13 @@ export async function retrieveCrossChatContext(
     const topResults = results.slice(0, 3);
     return topResults.length > 0
       ? topResults
-      : getKeywordFallback(db, workspaceId, currentMessage, excludeChatId);
+      : await getKeywordFallback(workspaceId, currentMessage, excludeChatId);
   } catch {
-    return getKeywordFallback(db, workspaceId, currentMessage, excludeChatId);
+    return await getKeywordFallback(workspaceId, currentMessage, excludeChatId);
   }
 }
 
 export async function storeMessageEmbedding(
-  db: Database.Database,
   workspaceId: string,
   chatId: string,
   messageId: string,
@@ -137,10 +128,10 @@ export async function storeMessageEmbedding(
 
     const embeddingBuffer = Buffer.from(new Float32Array(embedding).buffer);
 
-    db.prepare(`
+    await sql`
       INSERT INTO message_embeddings (id, workspace_id, chat_id, message_id, content, embedding, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, workspaceId, chatId, messageId, content, embeddingBuffer, Date.now());
+      VALUES (${id}, ${workspaceId}, ${chatId}, ${messageId}, ${content}, ${embeddingBuffer as unknown as string}, ${Date.now()})
+    `;
   } catch (error) {
     console.error('Failed to store message embedding:', error);
   }

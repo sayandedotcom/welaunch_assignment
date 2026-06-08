@@ -1,29 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDB } from '@/lib/db';
+import { sql } from '@/lib/db/postgres';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDB();
-  const workspace = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id);
-  if (!workspace) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  return NextResponse.json(workspace);
+  const { rows } = await sql`SELECT * FROM workspaces WHERE id = ${id}`;
+  if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  return NextResponse.json(rows[0]);
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { name, color } = await req.json();
-  const db = getDB();
 
-  db.prepare(`
-    UPDATE workspaces SET name = ?, color = ?, updated_at = ? WHERE id = ?
-  `).run(name, color, Date.now(), id);
+  await sql`
+    UPDATE workspaces SET name = ${name}, color = ${color}, updated_at = ${Date.now()} WHERE id = ${id}
+  `;
 
   return NextResponse.json({ success: true });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDB();
-  db.prepare('DELETE FROM workspaces WHERE id = ?').run(id);
+  await sql`DELETE FROM workspaces WHERE id = ${id}`;
   return NextResponse.json({ success: true });
 }

@@ -11,7 +11,7 @@ interface ToolCall {
   arguments: string;
 }
 
-const CHAT_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.7-sonnet';
+const CHAT_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-haiku';
 
 function getReasoningDelta(delta: Record<string, unknown> | undefined): string {
   if (!delta) return '';

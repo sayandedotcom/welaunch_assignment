@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDB } from '@/lib/db';
+import { sql } from '@/lib/db/postgres';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDB();
-  const messages = db.prepare(`
-    SELECT * FROM messages WHERE chat_id = ? ORDER BY created_at ASC
-  `).all(id);
-  return NextResponse.json(messages);
+  const { rows } = await sql`SELECT * FROM messages WHERE chat_id = ${id} ORDER BY created_at ASC`;
+  return NextResponse.json(rows);
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const db = getDB();
-  db.prepare('DELETE FROM chats WHERE id = ?').run(id);
+  await sql`DELETE FROM chats WHERE id = ${id}`;
   return NextResponse.json({ success: true });
 }

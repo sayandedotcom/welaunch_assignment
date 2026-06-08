@@ -1,13 +1,8 @@
 import { NextRequest } from 'next/server';
-import { getDB } from '@/lib/db';
+import { sql } from '@/lib/db/postgres';
 import { streamingReasoningChain, type StreamEvent } from '@/lib/langchain/chains/reasoning';
 import { retrieveCrossChatContext, storeMessageEmbedding } from '@/lib/langchain/chains/cross-chat';
 import { v4 as uuid } from 'uuid';
-
-interface MessageRow {
-  role: string;
-  content: string;
-}
 
 const webSearchTool = {
   name: 'web_search',
@@ -23,31 +18,32 @@ const webSearchTool = {
 
 export async function POST(req: NextRequest) {
   const { chatId, message, workspaceId } = await req.json();
-  const db = getDB();
 
   if (!chatId || !workspaceId || !message?.trim()) {
     return Response.json({ error: 'chatId, workspaceId, and message are required' }, { status: 400 });
   }
 
-  const chat = db.prepare('SELECT id FROM chats WHERE id = ? AND workspace_id = ?').get(chatId, workspaceId);
-  if (!chat) {
+  const { rows: chatRows } = await sql`
+    SELECT id FROM chats WHERE id = ${chatId} AND workspace_id = ${workspaceId}
+  `;
+  if (chatRows.length === 0) {
     return Response.json({ error: 'Chat not found in workspace' }, { status: 404 });
   }
 
-  const crossChatContext = await retrieveCrossChatContext(workspaceId, message, db, chatId);
+  const crossChatContext = await retrieveCrossChatContext(workspaceId, message, chatId);
 
-  const history = db.prepare(`
-    SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at ASC
-  `).all(chatId) as MessageRow[];
-  const chatHistory = history.map((m) => `${m.role}: ${m.content}`).join('\n');
+  const { rows: historyRows } = await sql`
+    SELECT role, content FROM messages WHERE chat_id = ${chatId} ORDER BY created_at ASC
+  `;
+  const chatHistory = historyRows.map((m) => `${m.role}: ${m.content}`).join('\n');
 
   const userMsgId = uuid();
-  db.prepare(`
+  await sql`
     INSERT INTO messages (id, chat_id, role, content, created_at)
-    VALUES (?, ?, 'user', ?, ?)
-  `).run(userMsgId, chatId, message, Date.now());
+    VALUES (${userMsgId}, ${chatId}, 'user', ${message}, ${Date.now()})
+  `;
 
-  storeMessageEmbedding(db, workspaceId, chatId, userMsgId, message).catch(console.error);
+  storeMessageEmbedding(workspaceId, chatId, userMsgId, message).catch(console.error);
 
   const contextStr = crossChatContext && crossChatContext.length > 0
     ? chatHistory + '\n\n[Cross-chat context from related conversations. If you use this context, cite the chat title explicitly.]:\n' + crossChatContext.map(c => 
@@ -88,12 +84,12 @@ export async function POST(req: NextRequest) {
         : null;
 
       const assistantMsgId = uuid();
-      db.prepare(`
+      await sql`
         INSERT INTO messages (id, chat_id, role, content, reasoning, citations, created_at)
-        VALUES (?, ?, 'assistant', ?, ?, ?, ?)
-      `).run(assistantMsgId, chatId, finalAnswerBuffer, reasoningBuffer, citations, Date.now());
+        VALUES (${assistantMsgId}, ${chatId}, 'assistant', ${finalAnswerBuffer}, ${reasoningBuffer}, ${citations}, ${Date.now()})
+      `;
 
-      storeMessageEmbedding(db, workspaceId, chatId, assistantMsgId, finalAnswerBuffer).catch(console.error);
+      storeMessageEmbedding(workspaceId, chatId, assistantMsgId, finalAnswerBuffer).catch(console.error);
 
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', messageId: assistantMsgId, citations: webSearchResults })}\n\n`));
       controller.close();
