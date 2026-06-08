@@ -50,7 +50,15 @@ export function ChatBlock() {
                 </div>
               )}
               {messages.map(msg => (
-                <ChatMessage key={msg.id} role={msg.role} content={msg.content} reasoning={msg.reasoning} />
+                <ChatMessage
+                  key={msg.id}
+                  role={msg.role}
+                  content={msg.content}
+                  reasoning={msg.reasoning}
+                  webSearchActive={msg.webSearchActive}
+                  webSearchQuery={msg.webSearchQuery}
+                  webSearchResults={msg.webSearchResults}
+                />
               ))}
             </div>
           </div>

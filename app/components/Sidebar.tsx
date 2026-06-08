@@ -2,7 +2,7 @@
 
 import { useWorkspace } from '@/context/WorkspaceContext';
 import { useChat } from '@/context/ChatContext';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Workspace } from '@/lib/types';
 import { Plus, X, MessageSquare } from 'lucide-react';
 
@@ -12,9 +12,14 @@ export function Sidebar() {
   const [showNewWorkspace, setShowNewWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
 
-  const handleWorkspaceSelect = async (workspace: Workspace) => {
+  useEffect(() => {
+    if (currentWorkspace) {
+      refreshChats(currentWorkspace.id);
+    }
+  }, [currentWorkspace, refreshChats]);
+
+  const handleWorkspaceSelect = (workspace: Workspace) => {
     setCurrentWorkspace(workspace);
-    await refreshChats(workspace.id);
   };
 
   const handleCreateChat = async () => {

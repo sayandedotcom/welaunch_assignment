@@ -7,6 +7,9 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
+  webSearchActive?: boolean;
+  webSearchQuery?: string;
+  webSearchResults?: string[];
 }
 
 interface Chat {
@@ -49,10 +52,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     loadChatMessages(c.id);
   }, [loadChatMessages]);
 
-  const refreshChats = async (workspaceId: string) => {
+  const refreshChats = useCallback(async (workspaceId: string) => {
     const res = await fetch(`/api/chats?workspaceId=${workspaceId}`);
-    setChats(await res.json());
-  };
+    const data = await res.json();
+    setChats(data);
+    setCurrentChatState(prev => {
+      if (prev?.workspaceId === workspaceId) return prev;
+      setMessages([]);
+      return null;
+    });
+  }, []);
 
   const createChat = async (workspaceId: string) => {
     const res = await fetch('/api/chats', {
@@ -94,19 +103,39 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }),
     });
 
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: 'Message failed' }));
+      setMessages(prev => prev.map(m =>
+        m.id === assistantMsgId ? { ...m, content: error.error || 'Message failed' } : m
+      ));
+      return;
+    }
+
     const reader = res.body?.getReader();
+    if (!reader) {
+      setMessages(prev => prev.map(m =>
+        m.id === assistantMsgId ? { ...m, content: 'No response stream was returned.' } : m
+      ));
+      return;
+    }
+
     const decoder = new TextDecoder();
     let reasoningBuffer = '';
     let answerBuffer = '';
+    let streamBuffer = '';
 
-    while (reader) {
+    while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const text = decoder.decode(value);
-      const lines = text.split('\n').filter(l => l.startsWith('data: '));
+      streamBuffer += decoder.decode(value, { stream: true });
+      const parts = streamBuffer.split('\n\n');
+      streamBuffer = parts.pop() || '';
 
-      for (const line of lines) {
+      for (const part of parts) {
+        const line = part.split('\n').find(l => l.startsWith('data: '));
+        if (!line) continue;
+
         try {
           const data = JSON.parse(line.replace('data: ', ''));
           if (data.type === 'reasoning') {
@@ -119,13 +148,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setMessages(prev => prev.map(m =>
               m.id === assistantMsgId ? { ...m, content: answerBuffer } : m
             ));
+          } else if (data.type === 'tool') {
+            setMessages(prev => prev.map(m =>
+              m.id === assistantMsgId ? { ...m, webSearchActive: true, webSearchQuery: data.input } : m
+            ));
+          } else if (data.type === 'tool_result') {
+            setMessages(prev => prev.map(m =>
+              m.id === assistantMsgId
+                ? { ...m, webSearchResults: [...(m.webSearchResults || []), data.result] }
+                : m
+            ));
           } else if (data.type === 'done') {
             setMessages(prev => prev.map(m =>
-              m.id === assistantMsgId ? { ...m, id: data.messageId } : m
+              m.id === assistantMsgId ? { ...m, id: data.messageId, webSearchActive: false } : m
             ));
           }
-        } catch {
-          // Skip malformed JSON
+        } catch (e) {
+          console.error('SSE JSON parse error:', e);
         }
       }
     }

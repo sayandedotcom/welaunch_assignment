@@ -10,6 +10,8 @@ interface CrossChatResult {
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+
   let dotProduct = 0;
   let normA = 0;
   let normB = 0;
@@ -18,13 +20,60 @@ function cosineSimilarity(a: number[], b: number[]): number {
     normA += a[i] * a[i];
     normB += b[i] * b[i];
   }
+  if (normA === 0 || normB === 0) return 0;
+
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function getKeywordFallback(
+  db: Database.Database,
+  workspaceId: string,
+  currentMessage: string,
+  excludeChatId?: string
+): CrossChatResult[] | null {
+  const rows = db.prepare(`
+    SELECT messages.chat_id, messages.content, chats.title AS chat_title
+    FROM messages
+    JOIN chats ON chats.id = messages.chat_id
+    WHERE chats.workspace_id = ? AND messages.chat_id != ?
+    ORDER BY messages.created_at DESC
+    LIMIT 10
+  `).all(workspaceId, excludeChatId || '') as Array<{
+    chat_id: string;
+    content: string;
+    chat_title: string;
+  }>;
+
+  if (rows.length === 0) return null;
+
+  const keywords = currentMessage
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((word) => word.length > 2);
+
+  if (keywords.length === 0) return null;
+
+  const scored = rows.map(row => {
+    const contentLower = row.content.toLowerCase();
+    const score = keywords.filter(k => contentLower.includes(k)).length;
+    return {
+      chatId: row.chat_id,
+      chatTitle: row.chat_title || 'Untitled Chat',
+      snippet: row.content.slice(0, 200),
+      similarity: score / keywords.length
+    };
+  }).filter(r => r.similarity > 0.2);
+
+  scored.sort((a, b) => b.similarity - a.similarity);
+  const topResults = scored.slice(0, 3);
+  return topResults.length > 0 ? topResults : null;
 }
 
 export async function retrieveCrossChatContext(
   workspaceId: string,
   currentMessage: string,
-  db: Database.Database
+  db: Database.Database,
+  excludeChatId?: string
 ): Promise<CrossChatResult[] | null> {
   try {
     const embeddings = createEmbeddings();
@@ -33,8 +82,8 @@ export async function retrieveCrossChatContext(
     const rows = db.prepare(`
       SELECT id, chat_id, content, embedding
       FROM message_embeddings
-      WHERE workspace_id = ?
-    `).all(workspaceId) as Array<{
+      WHERE workspace_id = ? AND chat_id != ?
+    `).all(workspaceId, excludeChatId || '') as Array<{
       id: string;
       chat_id: string;
       content: string;
@@ -45,6 +94,8 @@ export async function retrieveCrossChatContext(
 
     const results: CrossChatResult[] = [];
     for (const row of rows) {
+      if (row.embedding.length === 0) continue;
+
       const float32Array = new Float32Array(row.embedding.length / 4);
       for (let i = 0; i < float32Array.length; i++) {
         float32Array[i] = row.embedding.readFloatLE(i * 4);
@@ -63,31 +114,12 @@ export async function retrieveCrossChatContext(
     }
 
     results.sort((a, b) => b.similarity - a.similarity);
-    return results.slice(0, 3);
+    const topResults = results.slice(0, 3);
+    return topResults.length > 0
+      ? topResults
+      : getKeywordFallback(db, workspaceId, currentMessage, excludeChatId);
   } catch {
-    const rows = db.prepare(`
-      SELECT chat_id, content
-      FROM message_embeddings
-      WHERE workspace_id = ?
-      ORDER BY created_at DESC
-      LIMIT 5
-    `).all(workspaceId) as Array<{
-      chat_id: string;
-      content: string;
-    }>;
-
-    if (rows.length === 0) return null;
-
-    const keywords = currentMessage.toLowerCase().split(/\s+/);
-    const scored = rows.map(row => {
-      const contentLower = row.content.toLowerCase();
-      const score = keywords.filter(k => contentLower.includes(k)).length;
-      const chatRow = db.prepare('SELECT title FROM chats WHERE id = ?').get(row.chat_id) as { title: string } | undefined;
-      return { chatId: row.chat_id, chatTitle: chatRow?.title || 'Untitled Chat', snippet: row.content.slice(0, 200), similarity: score / keywords.length };
-    }).filter(r => r.similarity > 0.2);
-
-    scored.sort((a, b) => b.similarity - a.similarity);
-    return scored.slice(0, 3);
+    return getKeywordFallback(db, workspaceId, currentMessage, excludeChatId);
   }
 }
 
@@ -109,12 +141,8 @@ export async function storeMessageEmbedding(
       INSERT INTO message_embeddings (id, workspace_id, chat_id, message_id, content, embedding, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, workspaceId, chatId, messageId, content, embeddingBuffer, Date.now());
-  } catch {
-    const id = `emb_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    db.prepare(`
-      INSERT INTO message_embeddings (id, workspace_id, chat_id, message_id, content, embedding, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, workspaceId, chatId, messageId, content, Buffer.alloc(0), Date.now());
+  } catch (error) {
+    console.error('Failed to store message embedding:', error);
   }
 }
 

@@ -11,6 +11,33 @@ interface ToolCall {
   arguments: string;
 }
 
+const CHAT_MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.7-sonnet';
+
+function getReasoningDelta(delta: Record<string, unknown> | undefined): string {
+  if (!delta) return '';
+
+  if (typeof delta.reasoning === 'string') {
+    return delta.reasoning;
+  }
+
+  if (Array.isArray(delta.reasoning_details)) {
+    return delta.reasoning_details
+      .map((detail) => {
+        if (typeof detail === 'string') return detail;
+        if (detail && typeof detail === 'object') {
+          const typedDetail = detail as { text?: unknown; content?: unknown; summary?: unknown };
+          if (typeof typedDetail.text === 'string') return typedDetail.text;
+          if (typeof typedDetail.content === 'string') return typedDetail.content;
+          if (typeof typedDetail.summary === 'string') return typedDetail.summary;
+        }
+        return '';
+      })
+      .join('');
+  }
+
+  return '';
+}
+
 export async function* streamingReasoningChain(
   userMessage: string, 
   context?: string,
@@ -41,10 +68,12 @@ export async function* streamingReasoningChain(
       'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
     },
     body: JSON.stringify({
-      model: 'anthropic/claude-3.5-haiku',
+      model: CHAT_MODEL,
       messages,
       tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
       stream: true,
+      include_reasoning: true,
+      reasoning: { enabled: true, effort: 'medium' },
       max_tokens: 2000,
     }),
   });
@@ -81,8 +110,9 @@ export async function* streamingReasoningChain(
         const parsed = JSON.parse(data);
         const delta = parsed.choices?.[0]?.delta;
 
-        if (delta?.reasoning) {
-          reasoningBuffer += delta.reasoning;
+        const reasoningDelta = getReasoningDelta(delta);
+        if (reasoningDelta) {
+          reasoningBuffer += reasoningDelta;
           yield { type: 'reasoning', content: reasoningBuffer } as StreamEvent;
         }
 
@@ -152,9 +182,11 @@ export async function* streamingReasoningChain(
               'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
             },
             body: JSON.stringify({
-              model: 'anthropic/claude-3.5-haiku',
+              model: CHAT_MODEL,
               messages,
               stream: true,
+              include_reasoning: true,
+              reasoning: { enabled: true, effort: 'medium' },
               max_tokens: 2000,
             }),
           });
@@ -181,8 +213,9 @@ export async function* streamingReasoningChain(
                   const contParsed = JSON.parse(contData);
                   const contDelta = contParsed.choices?.[0]?.delta;
 
-                  if (contDelta?.reasoning) {
-                    reasoningBuffer += contDelta.reasoning;
+                  const reasoningDelta = getReasoningDelta(contDelta);
+                  if (reasoningDelta) {
+                    reasoningBuffer += reasoningDelta;
                     yield { type: 'reasoning', content: reasoningBuffer } as StreamEvent;
                   }
 

@@ -25,7 +25,16 @@ export async function POST(req: NextRequest) {
   const { chatId, message, workspaceId } = await req.json();
   const db = getDB();
 
-  const crossChatContext = await retrieveCrossChatContext(workspaceId, message, db);
+  if (!chatId || !workspaceId || !message?.trim()) {
+    return Response.json({ error: 'chatId, workspaceId, and message are required' }, { status: 400 });
+  }
+
+  const chat = db.prepare('SELECT id FROM chats WHERE id = ? AND workspace_id = ?').get(chatId, workspaceId);
+  if (!chat) {
+    return Response.json({ error: 'Chat not found in workspace' }, { status: 404 });
+  }
+
+  const crossChatContext = await retrieveCrossChatContext(workspaceId, message, db, chatId);
 
   const history = db.prepare(`
     SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at ASC
@@ -40,8 +49,8 @@ export async function POST(req: NextRequest) {
 
   storeMessageEmbedding(db, workspaceId, chatId, userMsgId, message).catch(console.error);
 
-  const contextStr = crossChatContext
-    ? chatHistory + '\n\n[Cross-chat context from related conversations]:\n' + crossChatContext.map(c => 
+  const contextStr = crossChatContext && crossChatContext.length > 0
+    ? chatHistory + '\n\n[Cross-chat context from related conversations. If you use this context, cite the chat title explicitly.]:\n' + crossChatContext.map(c => 
       `- From "${c.chatTitle}": ${c.snippet}`
     ).join('\n')
     : chatHistory;
