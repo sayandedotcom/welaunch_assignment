@@ -20,20 +20,20 @@ export function ChatInput({ onSend, disabled, placeholder = 'Type a message...' 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-3 px-4 py-3 bg-[#1a1a1a] border-t border-white/5">
+    <form onSubmit={handleSubmit} className="flex items-center gap-3 px-4 py-3 bg-zinc-900 border-t border-zinc-800">
       <input
         value={message}
         onChange={e => setMessage(e.target.value)}
         disabled={disabled}
-        className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none"
+        className="flex-1 bg-zinc-800 text-zinc-100 text-sm px-4 py-2.5 rounded-xl border border-zinc-700 focus:outline-none focus:border-zinc-600 placeholder-zinc-500"
         placeholder={placeholder}
       />
       <button
         type="submit"
         disabled={disabled || !message.trim()}
-        className="flex items-center justify-center size-8 rounded-full bg-white/10 text-zinc-300 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+        className="flex items-center justify-center size-10 rounded-xl bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors border border-zinc-700"
       >
-        <SendHorizontal className="size-4" />
+        <SendHorizontal className="size-5" />
       </button>
     </form>
   );

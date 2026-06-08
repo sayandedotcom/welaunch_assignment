@@ -13,10 +13,10 @@ export function ChatMessage({ role, content, reasoning }: ChatMessageProps) {
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-xl rounded-2xl px-5 py-3 text-sm leading-relaxed shadow-sm cursor-default ${
+      <div className={`max-w-md rounded-2xl px-4 py-3 text-sm leading-relaxed cursor-default ${
         isUser 
-          ? 'bg-[#1a1a1a] text-zinc-100 border border-white/5' 
-          : 'bg-[#1a1a1a] text-zinc-300 border border-white/5'
+          ? 'bg-zinc-800 text-zinc-100 border border-zinc-700' 
+          : 'bg-zinc-900 text-zinc-300 border border-zinc-800'
       }`}>
         <div className="whitespace-pre-wrap">{content}</div>
         {!isUser && reasoning && <ReasoningStream reasoning={reasoning} />}

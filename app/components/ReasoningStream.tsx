@@ -10,7 +10,7 @@ export function ReasoningStream({ reasoning }: ReasoningStreamProps) {
   if (!reasoning) return null;
 
   return (
-    <div className="mt-3 p-3 bg-[#262626] rounded-xl border border-white/5">
+    <div className="mt-3 p-3 bg-zinc-800/50 rounded-xl border border-zinc-800">
       <div className="flex items-center gap-2 mb-2">
         <Brain className="size-3.5 text-zinc-500" />
         <span className="text-xs font-medium text-zinc-500">Reasoning</span>
