@@ -4,7 +4,8 @@ import { createEmbeddings } from '../../vector-store';
 
 interface CrossChatResult {
   chatId: string;
-  content: string;
+  chatTitle: string;
+  snippet: string;
   similarity: number;
 }
 
@@ -44,12 +45,18 @@ export async function retrieveCrossChatContext(
 
     const results: CrossChatResult[] = [];
     for (const row of rows) {
-      const storedEmbedding = Array.from(new Float32Array(row.embedding.buffer));
+      const float32Array = new Float32Array(row.embedding.length / 4);
+      for (let i = 0; i < float32Array.length; i++) {
+        float32Array[i] = row.embedding.readFloatLE(i * 4);
+      }
+      const storedEmbedding = Array.from(float32Array);
       const similarity = cosineSimilarity(queryEmbedding, storedEmbedding);
       if (similarity > 0.7) {
+        const chatRow = db.prepare('SELECT title FROM chats WHERE id = ?').get(row.chat_id) as { title: string } | undefined;
         results.push({
           chatId: row.chat_id,
-          content: row.content,
+          chatTitle: chatRow?.title || 'Untitled Chat',
+          snippet: row.content.slice(0, 200),
           similarity,
         });
       }
@@ -75,7 +82,8 @@ export async function retrieveCrossChatContext(
     const scored = rows.map(row => {
       const contentLower = row.content.toLowerCase();
       const score = keywords.filter(k => contentLower.includes(k)).length;
-      return { chatId: row.chat_id, content: row.content, similarity: score / keywords.length };
+      const chatRow = db.prepare('SELECT title FROM chats WHERE id = ?').get(row.chat_id) as { title: string } | undefined;
+      return { chatId: row.chat_id, chatTitle: chatRow?.title || 'Untitled Chat', snippet: row.content.slice(0, 200), similarity: score / keywords.length };
     }).filter(r => r.similarity > 0.2);
 
     scored.sort((a, b) => b.similarity - a.similarity);
@@ -118,7 +126,7 @@ export async function generateWithCrossChatContext(
   const model = createChatModel();
 
   const contextPrompt = context.length > 0
-    ? `Related to your previous conversations:\n${context.map((c) => `- ${c.content}`).join('\n')}\n\n`
+    ? `Related to your previous conversations:\n${context.map((c) => `- ${c.chatTitle}: ${c.snippet}`).join('\n')}\n\n`
     : '';
 
   const response = await model.invoke([

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDB } from '@/lib/db';
-import { streamingReasoningChain } from '@/lib/langchain/chains/reasoning';
+import { streamingReasoningChain, type StreamEvent } from '@/lib/langchain/chains/reasoning';
 import { retrieveCrossChatContext, storeMessageEmbedding } from '@/lib/langchain/chains/cross-chat';
 import { v4 as uuid } from 'uuid';
 
@@ -8,6 +8,18 @@ interface MessageRow {
   role: string;
   content: string;
 }
+
+const webSearchTool = {
+  name: 'web_search',
+  description: 'Search the web for current information. Returns snippets from search results with URLs.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Search query for web search' }
+    },
+    required: ['query']
+  }
+};
 
 export async function POST(req: NextRequest) {
   const { chatId, message, workspaceId } = await req.json();
@@ -29,36 +41,52 @@ export async function POST(req: NextRequest) {
   storeMessageEmbedding(db, workspaceId, chatId, userMsgId, message).catch(console.error);
 
   const contextStr = crossChatContext
-    ? chatHistory + '\n\nRelated: ' + JSON.stringify(crossChatContext)
+    ? chatHistory + '\n\n[Cross-chat context from related conversations]:\n' + crossChatContext.map(c => 
+      `- From "${c.chatTitle}": ${c.snippet}`
+    ).join('\n')
     : chatHistory;
 
-  const stream = streamingReasoningChain(message, contextStr);
+  const stream = streamingReasoningChain(message, contextStr, [webSearchTool]);
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
       let reasoningBuffer = '';
       let finalAnswerBuffer = '';
+      const webSearchResults: string[] = [];
 
-      for await (const chunk of stream) {
-        if (chunk.startsWith('reasoning:')) {
-          reasoningBuffer = chunk.replace('reasoning:', '');
+      for await (const event of stream) {
+        const ev = event as StreamEvent;
+        
+        if (ev.type === 'reasoning') {
+          reasoningBuffer = ev.content;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'reasoning', content: reasoningBuffer })}\n\n`));
-        } else if (chunk.startsWith('answer:')) {
-          finalAnswerBuffer = chunk.replace('answer:', '');
+        } else if (ev.type === 'answer') {
+          finalAnswerBuffer = ev.content;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'answer', content: finalAnswerBuffer })}\n\n`));
+        } else if (ev.type === 'tool') {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'tool', name: ev.name, input: ev.input })}\n\n`));
+        } else if (ev.type === 'tool_result') {
+          webSearchResults.push(ev.result);
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'tool_result', name: ev.name, result: ev.result })}\n\n`));
+        } else if (ev.type === 'done') {
+          break;
         }
       }
 
+      const citations = webSearchResults.length > 0 
+        ? JSON.stringify({ webSearch: webSearchResults })
+        : null;
+
       const assistantMsgId = uuid();
       db.prepare(`
-        INSERT INTO messages (id, chat_id, role, content, reasoning, created_at)
-        VALUES (?, ?, 'assistant', ?, ?, ?)
-      `).run(assistantMsgId, chatId, finalAnswerBuffer, reasoningBuffer, Date.now());
+        INSERT INTO messages (id, chat_id, role, content, reasoning, citations, created_at)
+        VALUES (?, ?, 'assistant', ?, ?, ?, ?)
+      `).run(assistantMsgId, chatId, finalAnswerBuffer, reasoningBuffer, citations, Date.now());
 
       storeMessageEmbedding(db, workspaceId, chatId, assistantMsgId, finalAnswerBuffer).catch(console.error);
 
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', messageId: assistantMsgId })}\n\n`));
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done', messageId: assistantMsgId, citations: webSearchResults })}\n\n`));
       controller.close();
     },
   });

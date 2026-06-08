@@ -1,36 +1,130 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Chat - Multi-Workspace Chat Application
 
-## Getting Started
+A production-ready AI chat application with streaming reasoning, real-time web search, and cross-chat contextual retrieval.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+### Multi-Workspace Architecture
+- Create and switch between multiple isolated workspaces
+- Each workspace has its own color coding and chat sessions
+- Full CRUD operations for workspaces
+
+### Real-Time Web-Connected Responses
+- Custom Tavily API integration (no SDK plugins)
+- AI automatically searches the web when current information is needed
+- Visible "🌐 Searching the web..." indicator during fetch
+- Citations displayed below responses
+
+### Streaming Reasoning
+- Token-by-token streaming for real-time responses
+- Visible chain-of-thought reasoning separated from final answer
+- Reasoning appears in real-time as the model thinks
+
+### Chat History & Persistence
+- SQLite-based persistent storage per workspace
+- Full conversation history within each chat
+- Sidebar browsing of all chats
+
+### Cross-Chat Contextual Awareness
+- Semantic retrieval via embeddings (with keyword fallback)
+- Automatically detects related context from previous chats in same workspace
+- Context citations in responses
+
+## Tech Stack
+
+- **Framework:** Next.js 16 (App Router)
+- **Database:** SQLite with better-sqlite3
+- **AI:** OpenRouter API (Claude models)
+- **Web Search:** Tavily API
+- **Styling:** Tailwind CSS + shadcn/ui
+- **Language:** TypeScript
+
+## Architecture
+
+```
+app/
+├── api/
+│   ├── chat/route.ts          # Streaming chat endpoint
+│   ├── chats/route.ts         # Chat CRUD
+│   └── workspaces/route.ts    # Workspace CRUD
+components/
+├── AppSidebar.tsx             # Workspace & chat navigation
+├── ChatBlock.tsx              # Main chat interface
+├── ChatMessage.tsx            # Message display with reasoning
+└── ChatInput.tsx              # Message input
+context/
+├── ChatContext.tsx            # Chat state management
+└── WorkspaceContext.tsx       # Workspace state management
+lib/
+├── db/
+│   └── schema.ts              # SQLite schema
+├── langchain/
+│   ├── chat.ts                # Model configuration
+│   ├── chains/
+│   │   ├── reasoning.ts       # Streaming + tool execution
+│   │   └── cross-chat.ts      # Semantic retrieval
+│   └── tools/
+│       └── web-search.ts      # Tavily integration
+└── vector-store/
+    └── index.ts               # Embedding generation
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```env
+# Required
+OPENROUTER_API_KEY=sk-or-v1-...      # OpenRouter API key
+TAVILY_API_KEY=tvly-...              # Tavily API key for web search
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Optional
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1  # Default: OpenRouter
+```
 
-## Learn More
+### Getting API Keys
 
-To learn more about Next.js, take a look at the following resources:
+1. **OpenRouter:** https://openrouter.ai/keys
+2. **Tavily:** https://app.tavily.com/home
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Setup
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# Install dependencies
+npm install
 
-## Deploy on Vercel
+# Start development server
+npm run dev
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Production build
+npm run build
+npm start
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Cost Strategy
+
+- **Model:** Claude 3.5 Haiku (~ $0.80/1M tokens) for cost efficiency
+- **Context:** Automatic cross-chat retrieval reduces redundant API calls
+- **Web Search:** Only triggers when real-time info needed
+- **Hard Cap:** Set $8 budget limit in OpenRouter dashboard
+
+## Streaming Implementation
+
+The streaming uses Server-Sent Events (SSE) with proper event types:
+
+```typescript
+{ type: 'reasoning', content: '...' }  // Real-time reasoning
+{ type: 'answer', content: '...' }      // Real-time answer
+{ type: 'tool', name: 'web_search', input: '...' }     // Tool call started
+{ type: 'tool_result', name: 'web_search', result: '...' }  // Tool result
+{ type: 'done', messageId: '...' }      // Completion
+```
+
+## Cross-Chat Retrieval
+
+1. User message embedded using OpenAI's embedding model via OpenRouter
+2. Cosine similarity against all previous messages in workspace
+3. Threshold: 0.7 for semantic match, keyword fallback for lower
+4. Top 3 results injected as context with chat titles
+
+## License
+
+MIT

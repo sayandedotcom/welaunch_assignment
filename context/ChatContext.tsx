@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 
 interface Message {
   id: string;
@@ -78,9 +78,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const sendMessage = async (content: string) => {
     if (!currentChat) return;
 
+    const userMsgId = `temp-user-${Date.now()}`;
+    const userMsg: Message = { id: userMsgId, role: 'user', content };
     const assistantMsgId = `temp-assistant-${Date.now()}`;
-    const placeholderMsg: Message = { id: assistantMsgId, role: 'assistant', content: '' };
-    setMessages(prev => [...prev, placeholderMsg]);
+    const assistantMsg: Message = { id: assistantMsgId, role: 'assistant', content: '' };
+    setMessages(prev => [...prev, userMsg, assistantMsg]);
 
     const res = await fetch('/api/chat', {
       method: 'POST',
@@ -122,7 +124,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               m.id === assistantMsgId ? { ...m, id: data.messageId } : m
             ));
           }
-        } catch (e) {
+        } catch {
           // Skip malformed JSON
         }
       }

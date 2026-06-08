@@ -8,10 +8,18 @@ export async function GET(req: NextRequest) {
   const db = getDB();
 
   const chats = db.prepare(`
-    SELECT * FROM chats WHERE workspace_id = ? ORDER BY updated_at DESC
-  `).all(workspaceId);
+    SELECT id, workspace_id, title, created_at, updated_at FROM chats WHERE workspace_id = ? ORDER BY updated_at DESC
+  `).all(workspaceId) as Array<{ id: string; workspace_id: string; title: string; created_at: number; updated_at: number }>;
 
-  return NextResponse.json(chats);
+  const mapped = chats.map(c => ({
+    id: c.id,
+    workspaceId: c.workspace_id,
+    title: c.title,
+    createdAt: c.created_at,
+    updatedAt: c.updated_at,
+  }));
+
+  return NextResponse.json(mapped);
 }
 
 export async function POST(req: NextRequest) {
