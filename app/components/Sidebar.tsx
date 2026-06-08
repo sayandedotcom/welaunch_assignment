@@ -4,11 +4,11 @@ import { useWorkspace } from '@/context/WorkspaceContext';
 import { useChat } from '@/context/ChatContext';
 import { useEffect, useState } from 'react';
 import type { Workspace } from '@/lib/types';
-import { Plus, X, MessageSquare } from 'lucide-react';
+import { Plus, Trash2, MessageSquare } from 'lucide-react';
 
 export function Sidebar() {
   const { workspaces, currentWorkspace, setCurrentWorkspace, addWorkspace, deleteWorkspace } = useWorkspace();
-  const { chats, currentChat, setCurrentChat, createChat, refreshChats } = useChat();
+  const { chats, currentChat, setCurrentChat, createChat, deleteChat, refreshChats } = useChat();
   const [showNewWorkspace, setShowNewWorkspace] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
 
@@ -79,7 +79,7 @@ export function Sidebar() {
                 onClick={e => { e.stopPropagation(); deleteWorkspace(ws.id); }} 
                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-sidebar-accent-foreground/10 cursor-pointer"
               >
-                <X className="size-3.5 text-sidebar-foreground/50 hover:text-destructive" />
+                <Trash2 className="size-3.5 text-sidebar-foreground/50 hover:text-destructive" />
               </button>
             </div>
 
@@ -95,11 +95,18 @@ export function Sidebar() {
                 {chats.filter(c => c.workspaceId === ws.id).map(chat => (
                   <div
                     key={chat.id}
-                    onClick={() => setCurrentChat(chat)}
-                    className={`flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-sidebar-accent text-sm truncate transition-colors ${currentChat?.id === chat.id ? 'bg-sidebar-accent text-primary' : 'text-sidebar-foreground/70'}`}
+                    className={`group flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-sidebar-accent text-sm truncate transition-colors ${currentChat?.id === chat.id ? 'bg-sidebar-accent text-primary' : 'text-sidebar-foreground/70'}`}
                   >
-                    <MessageSquare className="size-3.5 shrink-0" />
-                    {chat.title}
+                    <div onClick={() => setCurrentChat(chat)} className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                      <MessageSquare className="size-3.5 shrink-0" />
+                      <span className="truncate">{chat.title}</span>
+                    </div>
+                    <button 
+                      onClick={e => { e.stopPropagation(); deleteChat(chat.id); }} 
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-sidebar-accent-foreground/10 cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="size-3.5 text-sidebar-foreground/50 hover:text-destructive" />
+                    </button>
                   </div>
                 ))}
               </div>
