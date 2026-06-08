@@ -2,6 +2,10 @@
 
 A production-ready AI chat application with streaming reasoning, real-time web search, and cross-chat contextual retrieval.
 
+## Documentation
+
+- [Technical Documentation](./docs/TECHNICAL_DOCUMENTATION.md) — Detailed coverage of UI/UX decisions, component library, agentic framework, streaming implementation, cross-chat retrieval, authentication approach, and OpenRouter integration
+
 ## Features
 
 ### Multi-Workspace Architecture
