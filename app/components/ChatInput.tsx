@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import { SendHorizontal } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
+  placeholder?: string;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, placeholder = 'Type a message...' }: ChatInputProps) {
   const [message, setMessage] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -18,20 +20,20 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2 p-4 border-t bg-card">
+    <form onSubmit={handleSubmit} className="flex items-center gap-3 px-4 py-3 bg-[#1a1a1a] border-t border-white/[0.06]">
       <input
         value={message}
         onChange={e => setMessage(e.target.value)}
         disabled={disabled}
-        className="flex-1 px-4 py-2 rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        placeholder="Type your message..."
+        className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none"
+        placeholder={placeholder}
       />
       <button
         type="submit"
         disabled={disabled || !message.trim()}
-        className="px-6 py-2 bg-primary text-primary-foreground rounded-lg disabled:opacity-50 hover:bg-primary/80"
+        className="flex items-center justify-center size-8 rounded-full bg-white/[0.08] text-zinc-300 hover:bg-white/[0.12] disabled:opacity-40 disabled:pointer-events-none transition-colors"
       >
-        Send
+        <SendHorizontal className="size-4" />
       </button>
     </form>
   );
